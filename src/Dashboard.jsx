@@ -70,7 +70,13 @@ export default function Dashboard() {
   const [purchaseForm, setPurchaseForm] = useState({ offerId: "", quantity: 100 });
   // Theft form
   const [theftForm, setTheftForm] = useState({ resourceType: "BOISIUM", moneySpent: 300 });
+  const [selectedTarget, setSelectedTarget] = useState(null);
+  const [autoPath, setAutoPath] = useState([]);
+  const [isAutoMoving, setIsAutoMoving] = useState(false);
 
+  const autoMoveIntervalRef = useRef(null);
+  const autoPathRef = useRef([]);
+  const isAutoMovingRef = useRef(false);
   const { elapsed, setLastMove } = useTimer();
   const mapRef = useRef(null);
   const logRef = useRef(null);
@@ -147,22 +153,187 @@ export default function Dashboard() {
   }, [api, addLog]);
 
   const moveShip = useCallback(async (direction) => {
-    if (loading) return;
+    if (loading) return null;
+
     const d = await api("POST", "/ship/move", { direction });
+
     if (d) {
       setLastMove(Date.now());
       processDiscoveredCells(d.discoveredCells, d.position);
-      if (d.position) { setShipPos({ x: d.position.x, y: d.position.y }); if (autoCenter) setCamera({ x: d.position.x, y: d.position.y }); }
+
+      if (d.position) {
+        setShipPos({ x: d.position.x, y: d.position.y });
+        if (autoCenter) setCamera({ x: d.position.x, y: d.position.y });
+      }
+
       setEnergy(d.energy);
+
       const sand = (d.discoveredCells || []).filter(c => c.type === "SAND");
       const ships = (d.discoveredCells || []).filter(c => c.ships?.length).flatMap(c => c.ships);
+
       let msg = `⛵ ${direction} → (${d.position?.x},${d.position?.y}) ⚡${d.energy}`;
       if (sand.length) msg += ` | 🏝 ÎLE: ${sand.map(c => `(${c.x},${c.y})`).join(" ")}`;
       if (ships.length) msg += ` | 🚢 ${ships.map(s => s.playerName || "?").join(",")}`;
+
       addLog(msg, sand.length ? "island" : "success");
       loadDbStats();
+
+      return d;
     }
+
+    return null;
   }, [api, processDiscoveredCells, addLog, autoCenter, loading, loadDbStats, setLastMove]);
+
+  const DIR_VECTORS = useMemo(() => ([
+    { dir: "NW", dx: -1, dy: -1 },
+    { dir: "N", dx: 0, dy: -1 },
+    { dir: "NE", dx: 1, dy: -1 },
+    { dir: "W", dx: -1, dy: 0 },
+    { dir: "E", dx: 1, dy: 0 },
+    { dir: "SW", dx: -1, dy: 1 },
+    { dir: "S", dx: 0, dy: 1 },
+    { dir: "SE", dx: 1, dy: 1 },
+  ]), []);
+
+  const getCellKey = (x, y) => `${x},${y}`;
+
+  const isWalkableCell = useCallback((cell) => {
+    if (!cell) return false;
+    return cell.type !== "ROCKS";
+  }, []);
+
+  const heuristic = useCallback((a, b) => {
+    const dx = Math.abs(a.x - b.x);
+    const dy = Math.abs(a.y - b.y);
+    return Math.max(dx, dy);
+  }, []);
+
+  const reconstructPath = useCallback((cameFrom, currentKey) => {
+    const totalPath = [];
+    let key = currentKey;
+
+    while (cameFrom.has(key)) {
+      const step = cameFrom.get(key);
+      totalPath.unshift(step.dir);
+      key = step.prevKey;
+    }
+
+    return totalPath;
+  }, []);
+
+  const findBestPath = useCallback((start, target) => {
+    if (!start || !target) return null;
+    if (start.x === target.x && start.y === target.y) return [];
+
+    const startKey = getCellKey(start.x, start.y);
+    const targetKey = getCellKey(target.x, target.y);
+
+    const targetCell = cells.get(targetKey);
+    if (!targetCell || !isWalkableCell(targetCell)) return null;
+
+    const openSet = new Set([startKey]);
+    const cameFrom = new Map();
+
+    const gScore = new Map();
+    gScore.set(startKey, 0);
+
+    const fScore = new Map();
+    fScore.set(startKey, heuristic(start, target));
+
+    while (openSet.size > 0) {
+      let currentKey = null;
+      let bestF = Infinity;
+
+      for (const key of openSet) {
+        const score = fScore.get(key) ?? Infinity;
+        if (score < bestF) {
+          bestF = score;
+          currentKey = key;
+        }
+      }
+
+      if (!currentKey) break;
+
+      if (currentKey === targetKey) {
+        return reconstructPath(cameFrom, currentKey);
+      }
+
+      openSet.delete(currentKey);
+
+      const [cx, cy] = currentKey.split(",").map(Number);
+
+      for (const { dir, dx, dy } of DIR_VECTORS) {
+        const nx = cx + dx;
+        const ny = cy + dy;
+        const neighborKey = getCellKey(nx, ny);
+        const neighborCell = cells.get(neighborKey);
+
+        if (!neighborCell || !isWalkableCell(neighborCell)) continue;
+
+        const tentativeG = (gScore.get(currentKey) ?? Infinity) + 1;
+
+        if (tentativeG < (gScore.get(neighborKey) ?? Infinity)) {
+          cameFrom.set(neighborKey, { prevKey: currentKey, dir });
+          gScore.set(neighborKey, tentativeG);
+          fScore.set(
+              neighborKey,
+              tentativeG + heuristic({ x: nx, y: ny }, target)
+          );
+          openSet.add(neighborKey);
+        }
+      }
+    }
+
+    return null;
+  }, [cells, DIR_VECTORS, heuristic, isWalkableCell, reconstructPath]);
+
+  const stopAutoMove = useCallback((reason = null) => {
+    if (autoMoveIntervalRef.current) {
+      clearInterval(autoMoveIntervalRef.current);
+      autoMoveIntervalRef.current = null;
+    }
+
+    autoPathRef.current = [];
+    isAutoMovingRef.current = false;
+    setAutoPath([]);
+    setIsAutoMoving(false);
+
+    if (reason) addLog(reason, "info");
+  }, [addLog]);
+
+  const startAutoMoveToCell = useCallback((targetCell) => {
+    if (!shipPos) {
+      addLog("❌ Position du bateau inconnue", "error");
+      return;
+    }
+
+    const path = findBestPath(shipPos, targetCell);
+
+    if (!path) {
+      addLog(`❌ Aucun chemin vers (${targetCell.x},${targetCell.y})`, "error");
+      setSelectedTarget(null);
+      return;
+    }
+
+    if (path.length === 0) {
+      addLog("ℹ️ Tu es déjà sur cette case", "info");
+      setSelectedTarget(targetCell);
+      return;
+    }
+
+    stopAutoMove();
+
+    setSelectedTarget(targetCell);
+    setAutoPath(path);
+    autoPathRef.current = [...path];
+    setIsAutoMoving(true);
+    isAutoMovingRef.current = true;
+
+    addLog(
+        `🎯 Trajet calculé vers (${targetCell.x},${targetCell.y}) | ${path.length} étape(s)`,
+        "success"
+    );
+  }, [shipPos, findBestPath, stopAutoMove, addLog]);
 
   // ─── Taxes ───────────────────────────────────────────
   const loadTaxes = useCallback(async () => {
@@ -270,11 +441,55 @@ export default function Dashboard() {
     const h = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
       const m = { ArrowUp: "N", ArrowDown: "S", ArrowLeft: "W", ArrowRight: "E", z: "N", q: "W", s: "S", d: "E", a: "NW", e: "NE", w: "SW", c: "SE" };
-      if (m[e.key]) { e.preventDefault(); moveShip(m[e.key]); }
+      if (m[e.key]) {
+        e.preventDefault();
+        stopAutoMove("⛔ Trajet auto annulé (commande manuelle)");
+        moveShip(m[e.key]);
+      }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [moveShip]);
+  }, [moveShip, stopAutoMove]);
+
+  useEffect(() => {
+    if (!isAutoMoving || !token) return;
+
+    if (autoMoveIntervalRef.current) {
+      clearInterval(autoMoveIntervalRef.current);
+    }
+
+    autoMoveIntervalRef.current = setInterval(async () => {
+      if (loading) return;
+
+      const nextDir = autoPathRef.current[0];
+
+      if (!nextDir) {
+        stopAutoMove("✅ Destination atteinte");
+        return;
+      }
+
+      const result = await moveShip(nextDir);
+
+      if (!result) {
+        stopAutoMove("❌ Déplacement automatique interrompu");
+        return;
+      }
+
+      autoPathRef.current = autoPathRef.current.slice(1);
+      setAutoPath([...autoPathRef.current]);
+
+      if (autoPathRef.current.length === 0) {
+        stopAutoMove("✅ Destination atteinte");
+      }
+    }, 1000);
+
+    return () => {
+      if (autoMoveIntervalRef.current) {
+        clearInterval(autoMoveIntervalRef.current);
+        autoMoveIntervalRef.current = null;
+      }
+    };
+  }, [isAutoMoving, token, loading, moveShip, stopAutoMove]);
 
   // ─── Map ─────────────────────────────────────────────
   const cellsArray = useMemo(() => Array.from(cells.values()), [cells]);
@@ -299,14 +514,25 @@ export default function Dashboard() {
       if (px < -cs * 2 || px > w + cs * 2 || py < -cs * 2 || py > h + cs * 2) return null;
       const isShip = shipPos && cell.x === shipPos.x && cell.y === shipPos.y;
       const hasShips = cell.ships?.length > 0;
+      const isTarget = selectedTarget && cell.x === selectedTarget.x && cell.y === selectedTarget.y;
       return (
-        <div key={`${cell.x},${cell.y}`} onMouseEnter={() => setHoveredCell(cell)} onMouseLeave={() => setHoveredCell(null)}
+        <div key={`${cell.x},${cell.y}`}
+             onMouseEnter={() => setHoveredCell(cell)}
+             onMouseLeave={() => setHoveredCell(null)}
+             onClick={() => startAutoMoveToCell(cell)}
           style={{
             position: "absolute", left: px - cs / 2, top: py - cs / 2, width: cs - 1, height: cs - 1,
             backgroundColor: COLORS[cell.type] || COLORS.SEA, border: `1px solid ${COLORS.GRID}`,
             borderRadius: cell.type === "SAND" ? 3 : 0, display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: cs * 0.45, zIndex: isShip ? 10 : 1,
-            boxShadow: isShip ? "0 0 14px rgba(255,68,68,0.7)" : cell.type === "SAND" ? "inset 0 0 10px rgba(232,200,114,0.3)" : "none",
+            boxShadow: isShip
+                ? "0 0 14px rgba(255,68,68,0.7)"
+                : isTarget
+                    ? "0 0 0 2px rgba(78,205,196,0.9), 0 0 18px rgba(78,205,196,0.5)"
+                    : cell.type === "SAND"
+                        ? "inset 0 0 10px rgba(232,200,114,0.3)"
+                        : "none",
+            cursor: "pointer",
           }}
         >{isShip ? "🚢" : hasShips ? "⛵" : cell.type === "SAND" && cs > 14 ? <img src={Ekod} alt="île" style={{ width: cs * 0.6, height: cs * 0.6, objectFit: "contain" }} /> : ""}</div>
       );
@@ -677,7 +903,11 @@ export default function Dashboard() {
           {/* Compass */}
           <div style={{ position: "absolute", bottom: 16, right: 16, display: "grid", gridTemplateColumns: "repeat(3,50px)", gridTemplateRows: "repeat(3,50px)", gap: 3 }}>
             {DIRS.map(({ dir, label, r, c }) => (
-              <button key={`${r}-${c}`} onClick={() => dir && moveShip(dir)} disabled={!dir || loading || !token}
+              <button key={`${r}-${c}`} onClick={() => {
+                if (!dir) return;
+                stopAutoMove("⛔ Trajet auto annulé (commande manuelle)");
+                moveShip(dir);
+              }} disabled={!dir || loading || !token}
                 style={{
                   gridRow: r + 1, gridColumn: c + 1,
                   background: !dir ? "rgba(78,205,196,0.12)" : "rgba(15,30,50,0.9)",
