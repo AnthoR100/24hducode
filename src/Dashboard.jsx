@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import Ekod from "./assets/ekod.png";
 
 const API = "/game";
 const DB = "/db";
@@ -307,7 +308,7 @@ export default function Dashboard() {
             fontSize: cs * 0.45, zIndex: isShip ? 10 : 1,
             boxShadow: isShip ? "0 0 14px rgba(255,68,68,0.7)" : cell.type === "SAND" ? "inset 0 0 10px rgba(232,200,114,0.3)" : "none",
           }}
-        >{isShip ? "🚢" : hasShips ? "⛵" : cell.type === "SAND" && cs > 14 ? "🏝" : ""}</div>
+        >{isShip ? "🚢" : hasShips ? "⛵" : cell.type === "SAND" && cs > 14 ? <img src={Ekod} alt="île" style={{ width: cs * 0.6, height: cs * 0.6, objectFit: "contain" }} /> : ""}</div>
       );
     });
   };
