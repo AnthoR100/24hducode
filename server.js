@@ -170,6 +170,10 @@ app.all("/game/*", async (req, res) => {
     const headers = {};
     const passHeaders = ["codinggame-id", "codinggame-signupcode"];
     passHeaders.forEach(h => { if (req.headers[h]) headers[h] = req.headers[h]; });
+    // Fallback to .env token
+    if (!headers["codinggame-id"] && process.env.CODINGGAME_ID) {
+      headers["codinggame-id"] = process.env.CODINGGAME_ID;
+    }
 
     const fetchOpts = { method: req.method, headers };
 
@@ -181,7 +185,7 @@ app.all("/game/*", async (req, res) => {
       }
     }
 
-    console.log(`→ ${req.method} ${url}`);
+    console.log(`→ ${req.method} ${url}${fetchOpts.body ? ` body=${fetchOpts.body}` : ""}`);
     const gameRes = await fetch(url, fetchOpts);
 
     // Handle empty responses (204 No Content etc.)
@@ -197,7 +201,7 @@ app.all("/game/*", async (req, res) => {
       data = { raw: text };
     }
 
-    console.log(`← ${gameRes.status} ${gamePath} (${text.length} bytes)`);
+    console.log(`← ${gameRes.status} ${gamePath}${gameRes.ok ? "" : " ⚠ " + text.slice(0, 200)}`);
 
     // Auto-persist cells from ship/move
     if (gamePath === "ship/move" && gameRes.ok && data) {

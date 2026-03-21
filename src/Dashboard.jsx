@@ -197,9 +197,9 @@ export default function Dashboard() {
   }, [api, addLog, loadNextStorage, loadPlayerDetails]);
 
   // ─── Marketplace ─────────────────────────────────────
-  const loadOffers = useCallback(async () => {
+  const loadOffers = useCallback(async (silent = false) => {
     const d = await api("GET", "/marketplace/offers");
-    if (d) { setOffers(d); addLog(`🏪 ${d.length} offres`, "success"); }
+    if (d) { setOffers(d); if (!silent) addLog(`🏪 ${d.length} offres`, "success"); }
   }, [api, addLog]);
 
   const createOffer = useCallback(async () => {
@@ -222,6 +222,14 @@ export default function Dashboard() {
     const d = await api("GET", "/thefts");
     if (d) { setThefts(d); addLog(`🏴‍☠️ ${d.length} vols`, "success"); }
   }, [api, addLog]);
+
+  // Auto-refresh marketplace when tab is active
+  useEffect(() => {
+    if (rightTab !== "market" || !token) return;
+    loadOffers();
+    const interval = setInterval(() => { loadOffers(true); }, 15000);
+    return () => clearInterval(interval);
+  }, [rightTab, token]);
 
   const launchTheft = useCallback(async () => {
     const d = await api("POST", "/thefts/player", theftForm);
@@ -270,7 +278,7 @@ export default function Dashboard() {
   // ─── Map ─────────────────────────────────────────────
   const cellsArray = useMemo(() => Array.from(cells.values()), [cells]);
   const handleMapMouseDown = (e) => { if (e.button !== 0) return; setIsDragging(true); setDragStart({ x: e.clientX, y: e.clientY }); setCameraStart({ ...camera }); };
-  const handleMapMouseMove = (e) => { if (!isDragging || !dragStart || !cameraStart) return; setCamera({ x: cameraStart.x - (e.clientX - dragStart.x) / (CELL_SIZE * zoom), y: cameraStart.y + (e.clientY - dragStart.y) / (CELL_SIZE * zoom) }); setAutoCenter(false); };
+  const handleMapMouseMove = (e) => { if (!isDragging || !dragStart || !cameraStart) return; setCamera({ x: cameraStart.x - (e.clientX - dragStart.x) / (CELL_SIZE * zoom), y: cameraStart.y - (e.clientY - dragStart.y) / (CELL_SIZE * zoom) }); setAutoCenter(false); };
   const handleMapMouseUp = () => { setIsDragging(false); setDragStart(null); setCameraStart(null); };
   const handleWheel = (e) => { e.preventDefault(); setZoom(z => Math.max(0.15, Math.min(5, z + (e.deltaY > 0 ? -0.15 : 0.15)))); };
 
@@ -286,7 +294,7 @@ export default function Dashboard() {
     const w = rect.width, h = rect.height, cs = CELL_SIZE * zoom, cx = w / 2, cy = h / 2;
     return cellsArray.map(cell => {
       const px = cx + (cell.x - camera.x) * cs;
-      const py = cy - (cell.y - camera.y) * cs;
+      const py = cy + (cell.y - camera.y) * cs;
       if (px < -cs * 2 || px > w + cs * 2 || py < -cs * 2 || py > h + cs * 2) return null;
       const isShip = shipPos && cell.x === shipPos.x && cell.y === shipPos.y;
       const hasShips = cell.ships?.length > 0;
@@ -420,7 +428,11 @@ export default function Dashboard() {
       case "market":
         return (
           <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-            <button onClick={loadOffers} style={actionBtn}>🔄 Charger les offres</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+              <button onClick={() => loadOffers()} style={actionBtn}>🔄 Charger les offres</button>
+              <span style={{ fontSize: 9, color: "#4a6a5a" }}>🟢 Auto-refresh 15s</span>
+              <span style={{ fontSize: 10, color: "#5a6a7a" }}>{offers.length} offre{offers.length > 1 ? "s" : ""}</span>
+            </div>
 
             {/* Create offer */}
             <div style={{ ...card, marginTop: 8 }}>
