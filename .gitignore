@@ -1,0 +1,6 @@
+node_modules
+dist
+3026.db
+3026.db-shm
+3026.db-wal
+.env
