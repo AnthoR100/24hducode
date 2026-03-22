@@ -1,5 +1,27 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import Ekod from "./assets/ekod.png";
+import Ekod from "./assets/images/ekod.png";
+
+// Musique
+import musique1 from "./assets/audio/One_Piece_-_4th_Opening_-_Bon_Voyage.mp3";
+import musique2 from "./assets/audio/One_Piece_-_Abertura_18_legendada.mp3";
+import musique3 from "./assets/audio/One_Piece_-_OP_11_1080p_HD.mp3";
+import musique4 from "./assets/audio/One_Piece_-_Opening_1_-_We_Are_Vostfr_Romaji.mp3";
+import musique5 from "./assets/audio/One_Piece_OP8.mp3";
+import musique6 from "./assets/audio/One_Piece_OP_3_-_To_the_Light_Japanese_HD.mp3";
+import musique7 from "./assets/audio/One_Piece_OP_6_-_BRAND_NEW_WORLD_720p_HD.mp3";
+import musique8 from "./assets/audio/One_Piece_OP_13_-_One_Day_4K-24FPS_Creditless.mp3";
+import musique9 from "./assets/audio/One_Piece_OP_17_-_Wake_up_4K-24FPS_Creditless.mp3";
+import musique10 from "./assets/audio/ONE_PIECE_OP_19_-_WE_CAN.mp3";
+import musique11 from "./assets/audio/One_Piece_Opening_2.mp3";
+import musique12 from "./assets/audio/One_Piece_opening_5_HD_1080p.mp3";
+import musique13 from "./assets/audio/One_Piece_opening_7_HD_1080p.mp3";
+import musique14 from "./assets/audio/One_piece_opening_9_Jungle_P.mp3";
+import musique15 from "./assets/audio/One_Piece_Opening_10_We_Are_CreditlessHD.mp3";
+import musique16 from "./assets/audio/One_Piece_opening_12_HD_1080p.mp3";
+import musique17 from "./assets/audio/One_Piece_Opening_14_HD_1080p.mp3";
+import musique18 from "./assets/audio/One_Piece_Opening_15_WE_GO_HD.mp3";
+import musique19 from "./assets/audio/One_Piece_Opening_20_Hope_by_Namie_Amuro.mp3";
+import musique20 from "./assets/audio/One_Piece_Opening_21_Super_Powers_by_V6.mp3";
 
 const API = "/game";
 const DB = "/db";
@@ -9,6 +31,31 @@ const DIRS = [
   { dir: "NW", label: "↖", r: 0, c: 0 }, { dir: "N", label: "↑", r: 0, c: 1 }, { dir: "NE", label: "↗", r: 0, c: 2 },
   { dir: "W", label: "←", r: 1, c: 0 }, { dir: null, label: "⚓", r: 1, c: 1 }, { dir: "E", label: "→", r: 1, c: 2 },
   { dir: "SW", label: "↙", r: 2, c: 0 }, { dir: "S", label: "↓", r: 2, c: 1 }, { dir: "SE", label: "↘", r: 2, c: 2 },
+];
+
+// Playlist
+const playlist = [
+  { title: "Opening 1", src: musique1 },
+  { title: "Opening 2", src: musique2 },
+  { title: "Opening 3", src: musique3 },
+  { title: "Opening 4", src: musique4 },
+  { title: "Opening 5", src: musique5 },
+  { title: "Opening 6", src: musique6 },
+  { title: "Opening 7", src: musique7},
+  { title: "Opening 8", src: musique8 },
+  { title: "Opening 9", src: musique9 },
+  { title: "Opening 10", src: musique10 },
+  { title: "Opening 11", src: musique11 },
+  { title: "Opening 12", src: musique12},
+  { title: "Opening 13", src: musique13 },
+  { title: "Opening 14", src: musique14},
+  { title: "Opening 15", src: musique15 },
+  { title: "Opening 16", src: musique16 },
+  { title: "Opening 17", src: musique17 },
+  { title: "Opening 18", src: musique18 },
+  { title: "Opening 19", src: musique19 },
+  { title: "Opening 20", src: musique20 },
+
 ];
 
 // ─── Timer hook ────────────────────────────────────────
@@ -73,6 +120,8 @@ export default function Dashboard() {
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [autoPath, setAutoPath] = useState([]);
   const [isAutoMoving, setIsAutoMoving] = useState(false);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const autoMoveIntervalRef = useRef(null);
   const autoPathRef = useRef([]);
@@ -80,6 +129,7 @@ export default function Dashboard() {
   const { elapsed, setLastMove } = useTimer();
   const mapRef = useRef(null);
   const logRef = useRef(null);
+  const audioRef = useRef(null);
 
   const addLog = useCallback((msg, type = "info") => {
     const time = new Date().toLocaleTimeString("fr-FR");
@@ -515,6 +565,7 @@ export default function Dashboard() {
       const isShip = shipPos && cell.x === shipPos.x && cell.y === shipPos.y;
       const hasShips = cell.ships?.length > 0;
       const isTarget = selectedTarget && cell.x === selectedTarget.x && cell.y === selectedTarget.y;
+      const isKnownIsland = cell.type === "SAND" && cell.islandState === "KNOWN";
       return (
         <div key={`${cell.x},${cell.y}`}
              onMouseEnter={() => setHoveredCell(cell)}
@@ -534,9 +585,65 @@ export default function Dashboard() {
                         : "none",
             cursor: "pointer",
           }}
-        >{isShip ? "🚢" : hasShips ? "⛵" : cell.type === "SAND" && cs > 14 ? <img src={Ekod} alt="île" style={{ width: cs * 0.6, height: cs * 0.6, objectFit: "contain" }} /> : ""}</div>
+        >{isShip ? (
+            "🚢"
+        ) : hasShips ? (
+            "⛵"
+        ) : cell.type === "SAND" && cs > 14 ? (
+            isKnownIsland ? (
+                <img
+                    src={Ekod}
+                    alt="île EKOD"
+                    style={{ width: cs * 0.6, height: cs * 0.6, objectFit: "contain" }}
+                />
+            ) : (
+                "🏝"
+            )
+        ) : (
+            ""
+        )}</div>
       );
     });
+  };
+
+  useEffect(() => {
+    const audio = new Audio(playlist[currentTrackIndex].src);
+    audioRef.current = audio;
+    audio.volume = 0.5;
+
+    const handleEnded = () => {
+      setCurrentTrackIndex((prev) => (prev + 1) % playlist.length);
+    };
+
+    audio.addEventListener("ended", handleEnded);
+
+    if (isPlaying) {
+      audio.play().catch((err) => {
+        console.error("Lecture impossible :", err);
+      });
+    }
+
+    return () => {
+      audio.pause();
+      audio.removeEventListener("ended", handleEnded);
+    };
+  }, [currentTrackIndex]);
+
+  const playMusic = async () => {
+    try {
+      await audioRef.current?.play();
+      setIsPlaying(true);
+    } catch (err) {
+      console.error("Erreur play :", err);
+    }
+  };
+
+  const pauseMusic = () => {
+    audioRef.current?.pause();
+  };
+
+  const nextMusic = () => {
+    setCurrentTrackIndex((prev) => (prev + 1) % playlist.length);
   };
 
   // ─── Right panel tabs ────────────────────────────────
@@ -799,6 +906,11 @@ export default function Dashboard() {
             {token && tokenInput === token ? "✓" : "OK"}
           </button>
         </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={playMusic}>▶️ Play</button>
+          <button onClick={pauseMusic}>⏸ Pause</button>
+          <button onClick={nextMusic}>⏭ Suivant</button>
+        </div>
         <button onClick={loadPlayerDetails} disabled={!token || loading} style={headerBtn}>📋 Profil</button>
         <button onClick={async () => { await loadCellsFromDB(); await loadDbStats(); addLog("🔄 Refresh DB", "success"); }} style={headerBtn}>🔄 DB</button>
         <label style={{ color: "#5a7a9a", fontSize: 10, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
@@ -883,7 +995,7 @@ export default function Dashboard() {
           </div>
 
           {/* Overlays */}
-          <div style={{ position: "absolute", top: 10, left: 10, background: "rgba(8,16,30,0.92)", borderRadius: 8, padding: "6px 14px", border: "1px solid rgba(40,80,120,0.4)", fontSize: 12, display: "flex", gap: 14, alignItems: "center" }}>
+          <div style={{ position: "absolute", top: 10, left: 10, background: "rgba(8,16,30,0.92)", borderRadius: 8, padding: "6px 14px", border: "1px solid rgba(40,80,120,0.4)", fontSize: 12, display: "flex", gap: 14, alignItems: "center", zIndex:"1000" }}>
             {shipPos && <span style={{ fontWeight: 600 }}>📍 ({shipPos.x},{shipPos.y})</span>}
             {energy !== null && <span style={{ color: energy < 5 ? "#ff4444" : energy < 15 ? "#ffa500" : "#4ecdc4", fontWeight: 800, fontSize: 14 }}>⚡{energy}</span>}
             <button onClick={() => { if (shipPos) { setCamera({ ...shipPos }); setAutoCenter(true); } }} style={smallBtn}>🎯</button>
@@ -891,7 +1003,7 @@ export default function Dashboard() {
             <span style={{ fontSize: 9, color: "#4a5a6a" }}>×{zoom.toFixed(1)}</span>
           </div>
 
-          {hoveredCell && <div style={{ position: "absolute", top: 10, right: 10, background: "rgba(8,16,30,0.92)", borderRadius: 8, padding: "6px 12px", border: "1px solid rgba(40,80,120,0.4)", fontSize: 11 }}>
+          {hoveredCell && <div style={{ position: "absolute", top: 10, right: 10, background: "rgba(8,16,30,0.92)", borderRadius: 8, padding: "6px 12px", border: "1px solid rgba(40,80,120,0.4)", fontSize: 11, zIndex: "1000" }}>
             ({hoveredCell.x},{hoveredCell.y}) <b>{hoveredCell.type}</b> Z{hoveredCell.zone}
             {hoveredCell.ships?.length > 0 && <div style={{ color: "#ffa500" }}>🚢 {hoveredCell.ships.map(s => s.playerName || "?").join(",")}</div>}
           </div>}
@@ -901,7 +1013,7 @@ export default function Dashboard() {
           </div>}
 
           {/* Compass */}
-          <div style={{ position: "absolute", bottom: 16, right: 16, display: "grid", gridTemplateColumns: "repeat(3,50px)", gridTemplateRows: "repeat(3,50px)", gap: 3 }}>
+          <div style={{ position: "absolute", bottom: 16, right: 16, display: "grid", gridTemplateColumns: "repeat(3,50px)", gridTemplateRows: "repeat(3,50px)", gap: 3, zIndex: "1000"}}>
             {DIRS.map(({ dir, label, r, c }) => (
               <button key={`${r}-${c}`} onClick={() => {
                 if (!dir) return;
