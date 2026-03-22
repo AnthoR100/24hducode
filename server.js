@@ -51,7 +51,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_cells_zone ON cells(zone);
 `);
 
-const insertCell = db.prepare(`INSERT OR REPLACE INTO cells (x, y, type, zone, cell_id) VALUES (?, ?, ?, ?, ?)`);
+// Migration: add validated column if missing
+try { db.exec(`ALTER TABLE cells ADD COLUMN validated INTEGER DEFAULT 0`); } catch (e) { /* already exists */ }
+
+const insertCell = db.prepare(`INSERT INTO cells (x, y, type, zone, cell_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT(x,y) DO UPDATE SET type=excluded.type, zone=excluded.zone, cell_id=COALESCE(excluded.cell_id, cells.cell_id)`);
+const validateCells = db.prepare(`UPDATE cells SET validated = 1 WHERE x = ? AND y = ? AND type = 'SAND'`);
 const insertShipLog = db.prepare(`INSERT INTO ships_log (x, y, direction, energy) VALUES (?, ?, ?, ?)`);
 const insertIsland = db.prepare(`INSERT OR REPLACE INTO islands (name, bonus_quotient, state) VALUES (?, ?, ?)`);
 
@@ -87,7 +91,17 @@ app.get("/db/stats", (req, res) => {
   const byZone = db.prepare("SELECT zone, COUNT(*) as count FROM cells GROUP BY zone ORDER BY zone").all();
   const totalMoves = db.prepare("SELECT COUNT(*) as count FROM ships_log").get();
   const islands = db.prepare("SELECT * FROM islands").all();
-  res.json({ totalCells: total.count, byType: Object.fromEntries(byType.map(r => [r.type, r.count])), byZone, totalMoves: totalMoves.count, islands });
+  const validatedSand = db.prepare("SELECT COUNT(*) as count FROM cells WHERE type='SAND' AND validated=1").get();
+  const unseenSand = db.prepare("SELECT COUNT(*) as count FROM cells WHERE type='SAND' AND validated=0").get();
+  res.json({
+    totalCells: total.count,
+    byType: Object.fromEntries(byType.map(r => [r.type, r.count])),
+    byZone,
+    totalMoves: totalMoves.count,
+    islands,
+    validatedSand: validatedSand.count,
+    unseenSand: unseenSand.count,
+  });
 });
 
 app.get("/db/history", (req, res) => {
@@ -100,6 +114,13 @@ app.post("/db/islands", (req, res) => {
   if (!islands) return res.status(400).json({ error: "missing islands" });
   db.transaction(() => { for (const d of islands) insertIsland.run(d.island.name, d.island.bonusQuotient, d.islandState); })();
   res.json({ ok: true, count: islands.length });
+});
+
+app.post("/db/validate", (req, res) => {
+  const { cells: cellsToValidate } = req.body;
+  if (!cellsToValidate || !Array.isArray(cellsToValidate)) return res.status(400).json({ error: "missing cells array" });
+  db.transaction(() => { for (const c of cellsToValidate) validateCells.run(c.x, c.y); })();
+  res.json({ ok: true, validated: cellsToValidate.length });
 });
 
 // ─── Import: accept raw logs or cell arrays ────────────
