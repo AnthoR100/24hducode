@@ -907,9 +907,9 @@ export default function Dashboard() {
           </button>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={playMusic}>▶️ Play</button>
-          <button onClick={pauseMusic}>⏸ Pause</button>
-          <button onClick={nextMusic}>⏭ Suivant</button>
+          <button onClick={playMusic} style={headerBtn}>▶️ Play</button>
+          <button onClick={pauseMusic} style={headerBtn}>⏸ Pause</button>
+          <button onClick={nextMusic} style={headerBtn}>⏭ Suivant</button>
         </div>
         <button onClick={loadPlayerDetails} disabled={!token || loading} style={headerBtn}>📋 Profil</button>
         <button onClick={async () => { await loadCellsFromDB(); await loadDbStats(); addLog("🔄 Refresh DB", "success"); }} style={headerBtn}>🔄 DB</button>
